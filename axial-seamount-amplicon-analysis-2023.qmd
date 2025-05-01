@@ -1,0 +1,251 @@
+---
+title: "Axial Seamount 2023 analysis"
+format: html
+editor: visual
+---
+
+## Set up environment
+
+```{r}
+library(tidyverse)
+```
+
+## Make manifest
+
+```{r}
+files <- read.csv("list_of_files_05012025.txt", header = F)
+head(files)
+length(unique(files$V1))
+fullpath <- "/scratch/group/hu-lab/data/tag-seq-data/18s-16s-axial22_23-seqs_2024-07/"
+```
+
+Parse sample ids.
+```{r}
+parsed <- files %>% 
+  mutate(SAMPLEID = str_replace(V1, "(\\w*?)_R((\\d+)).fastq.gz","\\1")) %>% 
+  separate(SAMPLEID, into = c("AXIAL","YEAR", "LAB_NUM", "DIVE", "LOCATION", "COLLECTION", "SAMPLETYPE", "ID", "FILTER", "TYPE", "PRIMER"), sep = "_", remove = FALSE) %>% 
+  mutate(READ = case_when(
+    grepl("_R1.fastq.gz", V1) ~ "r1",
+    grepl("_R2.fastq.gz", V1) ~ "r2",
+  ))
+parsed
+```
+
+Check stats.
+90 samples. 180 when we consider both.
+```{r}
+length(parsed$SAMPLEID)
+length(unique(parsed$SAMPLEID))
+# 90+90
+```
+
+Make manifest files. Read 1 and Read 2 need to be side by side.
+Columns need to be:
+sample-id, `forward-absolute-filepath`, and `reverse-absolute-filepath`
+```{r}
+manifest_ALL <- parsed %>% 
+  pivot_wider(names_from = READ, values_from = V1) %>% 
+  mutate(`sample-id` = SAMPLEID,
+         `forward-absolute-filepath` = paste(fullpath, r1, sep = ""),
+         `reverse-absolute-filepath` = paste(fullpath, r2, sep = "")) 
+# View(manifest_ALL)
+head(manifest_ALL)
+unique(manifest_ALL$SAMPLETYPE)
+```
+
+Separate 18S and 16S manifest file. Include controls for both.
+```{r}
+prokaryote_manifest <- manifest_ALL %>% 
+  filter(PRIMER == "16S" | SAMPLETYPE == "control") %>% 
+  select(`sample-id`, `forward-absolute-filepath`, `reverse-absolute-filepath`)
+
+eukaryote_manifest <- manifest_ALL %>% 
+  filter(PRIMER == "18S" | SAMPLETYPE == "control") %>% 
+  select(`sample-id`, `forward-absolute-filepath`, `reverse-absolute-filepath`)
+```
+
+```{r}
+# Write output as a manifest file
+write.table(prokaryote_manifest, file = "manifest-axial-prok", quote=FALSE,col.names=TRUE,row.names=FALSE,sep="\t")
+
+# Write output as a manifest file
+write.table(eukaryote_manifest, file = "manifest-axial-euk", quote=FALSE,col.names=TRUE,row.names=FALSE,sep="\t")
+```
+
+
+
+# Import & compile ASVs
+
+# Set up
+
+```{r}
+library(phyloseq)
+library(tidyverse)
+```
+
+# Import tsv files from QIIME2
+
+```{r}
+asv <- read.delim(file = "input-data/samples-asv-table.tsv", sep = "\t", skip = 1)
+# head(asv)
+```
+
+```{r}
+tax <- read.delim(file = "input-data/taxonomy.tsv", sep = "\t")
+# head(tax)
+```
+
+## Phyloseq import
+
+```{r}
+tax_matrix <- tax %>% 
+  select(-Consensus) %>% 
+  separate(Taxon, into = c("Domain", "Supergroup", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = ";", remove = FALSE) %>% 
+  column_to_rownames(var = "Feature.ID") %>% 
+  as.matrix
+```
+
+```{r}
+asv_matrix <- asv %>% 
+  column_to_rownames(var = "X.OTU.ID") %>% 
+  as.matrix
+```
+
+Do this with metadata
+
+```{r}
+metadata <- read.csv("input-data/metadata_axial-2023_2022.csv")
+
+# head(metadata)
+metadata_mod <- metadata %>% 
+  column_to_rownames(var = "SAMPLE_NAME")
+# metadata_mod
+
+# Import metadata as sample data in phyloseq
+samplenames <- sample_data(metadata_mod)
+```
+
+Make the phyloseq object
+
+```{r}
+# Converting to phylseq objects
+tax_phy <- tax_table(tax_matrix)
+asv_phy <- otu_table(asv_matrix, taxa_are_rows = TRUE)
+
+# Combine
+phy_obj <- phyloseq(asv_phy, tax_phy)
+
+phy_obj <- merge_phyloseq(phy_obj, samplenames)
+
+phy_obj
+```
+
+## Make compiled dataframe
+
+```{r}
+# head(asv)
+# head(tax)
+asv_wtax_df <- tax %>% 
+  select(-Consensus) %>% 
+  separate(Taxon, into = c("Domain", "Supergroup", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = ";", remove = FALSE) %>% 
+  right_join(asv %>% select(Feature.ID = "X.OTU.ID", everything())) %>% 
+  pivot_longer(cols = starts_with("X"), names_to = "FULL_SAMPLE", values_to = "SEQUENCE_COUNT")
+
+head(asv_wtax_df)
+unique(asv_wtax_df$FULL_SAMPLE)
+```
+
+Isolate plume only samples for preliminary analysis
+
+```{r}
+plume_only <- asv_wtax_df %>% 
+  filter(SEQUENCE_COUNT > 0) %>% 
+  separate(FULL_SAMPLE, into = c("NUMBER", "DIVE", "SITE", "SAMPLE_TYPE", "SAMPLE_NUMBER", "FILTER", "tmp"), sep = "_", remove = FALSE) %>% 
+  # Select the samples you want with filer
+  filter(grepl("Plume", SAMPLE_NUMBER) | 
+           grepl("plume", SAMPLE_NUMBER) |
+           SITE == "Background" |
+           SITE == "IntlDist" |
+           SITE == "ASHES")
+
+head(plume_only)
+```
+
+### From plume samples, back to phyloseq
+
+```{r}
+tax_matrix_plume <- plume_only %>% 
+  select(Feature.ID, Taxon, Domain:Species) %>% 
+  distinct() %>% 
+  mutate(SUPERGROUP = case_when(
+    Phylum == "Alveolata" ~ paste(Phylum, Class),
+    Phylum == "Rhizaria" ~ paste(Phylum, Class),
+    TRUE ~ Phylum
+  )) %>% 
+  column_to_rownames(var = "Feature.ID") %>% 
+  as.matrix
+
+asv_matrix_plume <- plume_only %>% 
+  select(Feature.ID, FULL_SAMPLE, SEQUENCE_COUNT) %>% 
+  pivot_wider(names_from = FULL_SAMPLE, values_from = SEQUENCE_COUNT, values_fill = 0) %>% 
+  column_to_rownames(var = "Feature.ID") %>% 
+  as.matrix
+```
+
+```{r}
+# metadata <- read.csv("input-data/metadata_axial-2023_2022.csv")
+# 
+# # head(metadata)
+# metadata_mod <- metadata %>% 
+#   column_to_rownames(var = "SAMPLE_NAME")
+# metadata_mod
+```
+
+```{r}
+
+```
+
+Import plume data into phyloseq
+
+```{r}
+# Converting to phyloseq objects
+tax_phy <- tax_table(tax_matrix_plume)
+asv_phy <- otu_table(asv_matrix_plume, taxa_are_rows = TRUE)
+
+# Combine
+phy_obj_plume <- phyloseq(asv_phy, tax_phy)
+phy_obj_plume
+
+## Combine again with metadata
+phy_obj_plume = merge_phyloseq(phy_obj_plume, samplenames)
+```
+
+```{r, fig.height=20, fig.width=15}
+# plot_heatmap(phy_obj_plume)
+```
+
+# QC sequencing run
+
+```{r}
+glimpse(asv_wtax_df)
+```
+
+```{r, fig.height=20}
+table <- asv_wtax_df %>% 
+  filter(SEQUENCE_COUNT > 0) %>% 
+  group_by(FULL_SAMPLE) %>% 
+  summarise(QC_SEQ_SUM = sum(SEQUENCE_COUNT),
+            QC_ASV_COUNT = n())
+# %>% 
+  # pivot_longer(cols = starts_with("QC_"), names_to = "QC", values_to = "VALUE") %>% 
+  # ggplot(aes(x = FULL_SAMPLE, y = VALUE)) +
+  # geom_bar(stat = "identity", color = "black", aes(fill = QC)) +
+  # facet_grid(rows = vars(QC), scales = "free") +
+  # # coord_flip() +
+  # theme(legend.position = "none",
+  #       axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+# hist(asv_wtax_df$SEQUENCE_COUNT)
+```
