@@ -37,3 +37,10 @@ sbatch import-seqs.slurm
 
 sbatch multiqc.slurm
 ```
+
+## May 1, 2025
+
+1. Fix sample names at FASTQ level
+2. Revise manifest files to reflect what is needed
+3. Generate metadata table for Axial 2023
+4. Merge with all prior 18S deep-sea data

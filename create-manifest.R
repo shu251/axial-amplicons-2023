@@ -1,5 +1,6 @@
 # Read in SRA sample IDs and list of raw fastq files to generate a manifest file ready for qiime2 import
 
+
 # Change working directory to sequences
 ## setwd("/scratch/group/hu-lab/code-club-test/amplicon-qiime2-intro/")
 setwd("/scratch/group/hu-lab/data/microeuk-tag-seq/AxialSeamount-2023-18S_16S/")

@@ -73,6 +73,9 @@ write.table(eukaryote_manifest, file = "manifest-axial-euk", quote=FALSE,col.nam
 ```
 
 
+# QIIME2
+
+Running QIIME2 here: `/scratch/group/hu-lab/qiime-axial-2023_18S_16S`
 
 # Import & compile ASVs
 
