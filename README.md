@@ -1,46 +1,19 @@
 # Axial-amplicons-2023
 
-## Aug 13, 2024
+## May 8, 2025
 
-1.  Upload new 18S and 16S sequences from UGA
-PATH: /scratch/group/hu-lab/data/microeuk-tag-seq/AxialSeamount-2023-18S_16S
+1.  Raw 18S and 16S sequences from this sequencing run are: `/scratch/group/hu-lab/data/tag-seq-data/18s-16s-axial22_23-seqs_2024-07`
 
-2. Modify create.manifest script. Changed file paths
+2.  Manifest file, qiime2 slurm scripts, and outputs are located here: `/scratch/group/hu-lab/qiime-axial-2023_18S_16S`
 
-3. Run script to make manifest file.
+3.  Final products for 16S rRNA gene analysis: `/scratch/group/hu-lab/qiime-axial-2023_18S_16S/16S_output_axial_2023`
 
-## Aug 27
+Where we have the ASV table - `axial-2023-16s-asv-table.tsv` and the taxonomic assignments using SILVA, `taxonomy-0.9_0.8_SILVA/taxonomy.tsv`.
 
-Had to re-download sequences from basespace, there was an issue with upper level directory.
+4.  18S rRNA gene amplicons were merged with all other deep-sea hydrothermal vent metabarcoding to date. This way, we have the option to always expand our search for where specific taxa are found.
 
-Now, re-running manifest file creation and initial QC of sequences:
+Merged 18S rRNA gene results are here: `/scratch/group/hu-lab/deepsea-18S-merged-outputs` In this this directory, there are two separate taxonomy outputs. One was made with PR2 and the other was made with SILVA.
 
-```
-# Make the manifest file:
+------------------------------------------------------------------------
 
-## Activate R on the HPRC
-module load GCC/12.2.0
-module load OpenMPI/4.1.4
-module load R_tamu/4.3.1
-
-## Run script
-
-Rscript r-scripts/create-manifest.R
-
-```
-
-Run slurm jobs to do sequence QC:
-
-```
-# in `slurm-scripts`
-sbatch import-seqs.slurm
-
-sbatch multiqc.slurm
-```
-
-## May 1, 2025
-
-1. Fix sample names at FASTQ level
-2. Revise manifest files to reflect what is needed
-3. Generate metadata table for Axial 2023
-4. Merge with all prior 18S deep-sea data
+## 
