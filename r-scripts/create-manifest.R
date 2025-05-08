@@ -1,5 +1,6 @@
 # Read in SRA sample IDs and list of raw fastq files to generate a manifest file ready for qiime2 import
 
+
 # Change working directory to sequences
 ## setwd("/scratch/group/hu-lab/code-club-test/amplicon-qiime2-intro/")
 setwd("/scratch/group/hu-lab/data/microeuk-tag-seq/AxialSeamount-2023-18S_16S/")
@@ -45,6 +46,6 @@ manifest <- paths_run %>%
 	select('sample-id' = SAMPLEID, `forward-absolute-filepath`, `reverse-absolute-filepath`)
 
 # Write output as a manifest file
-write.table(manifest, file = "/home/skhu/axial-amplicons-2023/manifest-axial", quote=FALSE,col.names=TRUE,row.names=FALSE,sep="\t")
+write.table(manifest, file = "/home/skhu/axial-amplicons-2023/manifest", quote=FALSE,col.names=TRUE,row.names=FALSE,sep="\t")
 
 
