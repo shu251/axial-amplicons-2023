@@ -82,14 +82,13 @@ Running QIIME2 here: `/scratch/group/hu-lab/qiime-axial-2023_18S_16S`
 # Set up
 
 ```{r}
-library(phyloseq)
 library(tidyverse)
 ```
 
 # Import tsv files from QIIME2
 
 ```{r}
-asv <- read.delim(file = "input-data/samples-asv-table.tsv", sep = "\t", skip = 1)
+asv <- read.delim(file = "input-data/deepsea-18s-merged-asv-table-05022025.tsv", sep = "\t", skip = 1)
 # head(asv)
 ```
 
@@ -109,24 +108,31 @@ tax_matrix <- tax %>%
 ```
 
 ```{r}
-asv_matrix <- asv %>% 
-  column_to_rownames(var = "X.OTU.ID") %>% 
-  as.matrix
+asv_long <- asv %>% 
+  pivot_longer(cols = -c("X.OTU.ID"))
+  # column_to_rownames(var = "X.OTU.ID") %
 ```
 
 Do this with metadata
 
 ```{r}
-metadata <- read.csv("input-data/metadata_axial-2023_2022.csv")
-
-# head(metadata)
-metadata_mod <- metadata %>% 
-  column_to_rownames(var = "SAMPLE_NAME")
-# metadata_mod
-
-# Import metadata as sample data in phyloseq
-samplenames <- sample_data(metadata_mod)
+library(readxl)
+# ?readxl
 ```
+
+
+```{r}
+metadata <- read_excel("metadata-axial-2023.xlsx") %>% 
+  select(-OLD_NAME_ARCHIVE)
+# head(metadata)
+
+```
+
+
+```{r}
+
+```
+
 
 Make the phyloseq object
 
