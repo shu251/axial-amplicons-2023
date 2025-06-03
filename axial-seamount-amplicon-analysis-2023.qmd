@@ -8,6 +8,7 @@ editor: visual
 
 ```{r}
 library(tidyverse)
+library(readxl)
 ```
 
 ## Make manifest
@@ -90,14 +91,222 @@ library(tidyverse)
 ```{r}
 asv <- read.delim(file = "input-data/deepsea-18s-merged-asv-table-05022025.tsv", sep = "\t", skip = 1)
 # head(asv)
+# colnames(asv)
 ```
 
 ```{r}
 tax <- read.delim(file = "input-data/taxonomy.tsv", sep = "\t")
-# head(tax)
+head(tax)
 ```
 
-## Phyloseq import
+```{r}
+metadata_samples <- read_excel("metadata-axial-2023.xlsx", sheet = "metadata") %>% 
+  select(-NUM, -OLD_NAME_ARCHIVE)
+biotic <- read_excel("metadata-axial-2023.xlsx", sheet = "biotic")
+head(metadata_samples)
+head(biotic)
+```
+
+
+Compile and isolate Axial Seamount 2023 samples only
+
+```{r}
+asv_long_tax <- asv %>% 
+  pivot_longer(cols = -c("X.OTU.ID"), names_to = "SAMPLE_NAME", values_to = "SEQUENCE_COUNT") %>% 
+  select(Feature.ID = "X.OTU.ID", SAMPLE_NAME, SEQUENCE_COUNT) %>% 
+  filter(grepl("AXIAL_23", SAMPLE_NAME)) %>% 
+  # separate(SAMPLE_NAME, into = c("axial", "year", "lab_num", "dive_ctd", "sample_name", "collection_method", "sample_type","sample_identifier",	"filter_processing","primer"), sep = "_", remove = FALSE) %>% 
+  filter(SEQUENCE_COUNT > 0) %>% 
+  left_join(metadata_samples)
+
+head(asv_long_tax)
+# unique(asv_long_tax$collection_method)
+colnames(asv_long_tax)
+```
+
+
+## Curate taxonomy
+
+```{r}
+head(tax)
+```
+
+
+```{r}
+# head(asv_compiled$Taxon)
+myzo_18s <- c("Perkinsea", "Chrompodellids", "Apicomplexa")
+supergroup_list <- c("Stramenopiles", "Rhizaria", "Alveolata", "Opisthokonta", "Ancyromonadida")
+supergroup0_list <- c("Archaeplastida", "CRuMs", "Provora", "Cryptista")
+##
+tax_refine <- tax %>% 
+  # select(Taxon) %>% distinct() %>%
+  separate(Taxon, into = c("Domain", "Supergroup_0","Supergroup", "Phylum", "Class", "Order" ,"Family", "Genus_spp"), remove = FALSE, sep = ";") %>% 
+  filter(Domain == "Eukaryota") %>% 
+  mutate(SUPERGROUP_PHYLUM = case_when(
+    ## NAs!
+    (is.na(Supergroup) & is.na(Supergroup_0)) ~ "Eukaryote-Unannotated",
+    (is.na(Supergroup) & !(is.na(Supergroup_0))) ~ paste(Supergroup_0, "Unannotated", sep = "-"),
+    (!(is.na(Supergroup)) & is.na(Supergroup_0)) ~ paste(Supergroup, "Unannotated", sep = "-"),
+    (is.na(Phylum) & is.na(Supergroup)) ~ paste(Supergroup_0, "Unannotated", sep = "-"),
+    Supergroup_0 == "Eukaryota_X" ~ "Eukaryote-Unannotated",
+    # Alveolata
+    Class == "Syndiniales" ~ paste(Supergroup, Class, sep = "-"),
+    Phylum %in% myzo_18s ~ "Alveolata-Myzozoa",
+    Phylum == "Dinoflagellata" ~ "Alveolata-Dinophyta",
+    (Supergroup == "Alveolata" & grepl("_X", Phylum)) ~ "Alveolata-Unannotated",
+    (Supergroup == "Alveolata" & is.na(Phylum)) ~ "Alveolata-Unannotated",
+    # Stramenopiles
+    (Supergroup == "Stramenopiles" & grepl("_X", Phylum)) ~ "Stramenopiles-Unannotated",
+    (Supergroup == "Stramenopiles" & is.na(Phylum)) ~ "Stramenopiles-Unannotated",
+    # Rhizaria
+    (Supergroup == "Rhizaria" & grepl("_X", Phylum)) ~ "Rhizaria-Unannotated",
+    (Supergroup == "Rhizaria" & is.na(Phylum)) ~ "Rhizaria-Unannotated",
+    # Amoebozoa
+    Supergroup_0 == "Amoebozoa" & is.na(Supergroup) ~ "Amoebozoa-Unannotated",
+    Supergroup_0 == "Amoebozoa" ~ paste(Supergroup_0, Supergroup, sep = "-"),
+    Supergroup == "Discosea" ~ "Amoebozoa-Lobosa",
+    # 
+    Supergroup == "Apusomonada" ~ "Apusozoa-Apusomonadida",
+    Supergroup == "Breviatea" ~ "Breviatea-Unannotated",
+    Supergroup == "Picozoa" ~ "Picozoa",
+    Supergroup == "Ancyromonadida" ~ "Ancyromonadida",
+    Supergroup_0 == "Excavata" ~ paste("Excavata", Supergroup, sep = "-"),
+    Supergroup_0 == "Hacrobia" ~ paste("Hacrobia", Supergroup, sep = "-"),
+    #
+    Supergroup %in% supergroup_list ~ paste(Supergroup, Phylum, sep = "-"), 
+    Supergroup_0 %in% supergroup0_list ~ paste(Supergroup_0, Supergroup, sep = "-"), 
+    Supergroup == "Telonemia" ~ "Telonemia"
+    ))
+  # select(-Genus_spp) %>% distinct()
+# View(asv_compiled_wtax)
+unique(tax_refine$SUPERGROUP_PHYLUM)
+```
+
+## Plot vent environment at Axial Seamount
+
+```{r}
+colnames(asv_long_tax)
+# head(asv_long_tax)
+axial_df_tax <- asv_long_tax %>% 
+  group_by(Feature.ID, dive_ctd, sample_name, collection_method, sample_type, filter, primer, location_name, depth_category) %>% 
+    summarise(AVG_SEQ = mean(SEQUENCE_COUNT)) %>% 
+  ungroup() %>% 
+  left_join(tax) %>% 
+  left_join(tax_refine) %>% 
+  filter(Taxon != "Unassigned")
+head(axial_df_tax)
+```
+
+```{r}
+
+# "#1abc9c", "#34495e", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#f5bfb0", "#de6600", "#007a7a", "#ee429b", "#d7b6d7", "red", "yellow", "blue"
+# 
+# tax_color_metaT <- c("#1abc9c", "#34495e", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#f5bfb0", "#de6600", "#007a7a", "#93c47d","#ee429b", "#d7b6d7", "#e71414", "#ffe8a4", "#2986cc", "#bcbcbc", "#444444")
+```
+
+
+```{r}
+unique(axial_df_tax$Supergroup)
+```
+
+### Plot vents
+
+```{r, fig.height=7, fig.width=9}
+axial_df_tax %>% 
+  filter(sample_type == "vent") %>%
+  filter(filter == "PES02" | filter == "sterivex") %>%
+  filter(Supergroup != "Opisthokonta") %>% 
+  filter(!is.na(Supergroup)) %>% 
+  filter(depth_category != "above vent") %>% 
+  group_by(location_name, depth_category, SUPERGROUP_PHYLUM) %>% 
+  summarize(ASV_COUNT = n(),
+            SEQUENCE_SUM = sum(AVG_SEQ)) %>% 
+  ggplot(aes(y = location_name, x = SEQUENCE_SUM)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", aes(fill = SUPERGROUP_PHYLUM)) +
+  scale_fill_manual(values = c("#1abc9c", "#34495e","#125223", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#eb7e17","#f5bfb0", "#de6600", "#007a7a", "#93c47d","#230b36","#a1eb17","#666330","#ee429b", "#d7b6d7", "#e71414", "#ffe8a4", "#eb655b","#2986cc", "#bcbcbc","#c5cc49","#1b1c1b", "#444444", "#f0f5f1")) +
+  theme_classic() +
+  facet_grid(rows = vars(depth_category)) +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        strip.text = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(y = "Diffuse vent sites", x = "Relative Sequence Abundance")
+# ggsave("figures/vent-nsf-report.svg", width = 9, height = 7, device = "svg", limitsize = FALSE)
+```
+
+
+
+
+### Plot vent, background, plume
+
+```{r}
+unique(axial_df_tax$depth_category)
+```
+
+
+```{r, fig.height=12, fig.width=9}
+axial_df_tax %>% 
+  filter(filter == "PES02" | filter == "sterivex") %>%
+  filter(Supergroup != "Opisthokonta") %>% 
+  filter(sample_type != "control") %>% 
+  filter(!is.na(Supergroup)) %>% 
+  # filter(depth_category != "above vent") %>% 
+  group_by(sample_type, location_name, depth_category, SUPERGROUP_PHYLUM) %>% 
+  summarize(ASV_COUNT = n(),
+            SEQUENCE_SUM = sum(AVG_SEQ)) %>% 
+  ggplot(aes(y = location_name, x = SEQUENCE_SUM)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", aes(fill = SUPERGROUP_PHYLUM)) +
+  scale_fill_manual(values = c("#1abc9c", "#34495e","#125223", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#eb7e17","#f5bfb0", "#de6600", "#007a7a", "#93c47d","#230b36","#a1eb17","#666330","#ee429b", "#d7b6d7", "#e71414", "#ffe8a4", "#eb655b","#2986cc", "#bcbcbc","#c5cc49","#1b1c1b", "#444444", "#f0f5f1")) +
+  theme_classic() +
+  facet_grid(rows = vars(sample_type, depth_category), space = "free", scales = "free") +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        # strip.text = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(y = "", x = "Relative Sequence Abundance")
+
+```
+
+
+# Plot metadata
+
+```{r}
+head(biotic)
+biotic_refined <- biotic %>% 
+  select(dive_ctd, sample_name, sample_type, location_name, depth_category, depth, prok) %>% 
+  drop_na() %>% 
+  group_by(location_name, sample_type) %>% 
+  summarise(mean_prok = mean(prok),
+            max_prok = max(prok),
+            min_prok = min(prok))
+# View(biotic_refined)
+```
+
+```{r, fig.height=5, fig.width=5}
+ggplot(biotic_refined, aes(x = mean_prok, y = location_name)) +
+  geom_point(stat = "identity", color = "black")+
+  geom_errorbar(aes(xmin = min_prok, xmax = max_prok), width = 0.2) +
+  scale_x_log10() +
+  facet_grid(rows = vars(sample_type), space = "free", scales = "free") +
+  theme_classic() +
+    theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        strip.text = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        panel.grid.major = element_line(color = "grey")) +
+  labs(y = "", x = "Log prokaryotic cells per ml")
+```
+
+
+
+
+# Prior
 
 ```{r}
 tax_matrix <- tax %>% 
