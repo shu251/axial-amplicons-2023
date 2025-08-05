@@ -1,0 +1,10 @@
+---
+title: "Home"
+format: html
+editor: visual
+---
+
+## Summary of Axial seamount metabarcoding project
+
+1.  18S rRNA 
+2.  16S rRNA
