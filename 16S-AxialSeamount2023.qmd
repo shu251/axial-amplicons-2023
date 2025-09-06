@@ -213,7 +213,7 @@ subset <- c("p__Proteobacteria","p__Campilobacterota", "p__Desulfobacterota", "p
 ```
 
 
-```{r, fig.height=18, fig.width=18}
+```{r, fig.height=18, fig.width=25}
 bar_plot_subset_bacteria <- refined_asv_table %>% 
   filter(Domain != "Unassigned") %>% 
   filter(Domain != "d__Eukaryota") %>% 

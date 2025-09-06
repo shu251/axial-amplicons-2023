@@ -207,25 +207,25 @@ unique(axial_df_tax$Supergroup)
 
 ### Plot vents
 
-```{r, fig.height=7, fig.width=9}
+```{r, fig.height=14, fig.width=9}
 axial_df_tax %>% 
   filter(sample_type == "vent") %>%
-  filter(filter == "PES02" | filter == "sterivex") %>%
+  # filter(filter == "PES02" | filter == "sterivex") %>%
   filter(Supergroup != "Opisthokonta") %>% 
   filter(!is.na(Supergroup)) %>% 
   filter(depth_category != "above vent") %>% 
-  group_by(location_name, depth_category, SUPERGROUP_PHYLUM) %>% 
+  group_by(location_name, depth_category, SUPERGROUP_PHYLUM, filter) %>% 
   summarize(ASV_COUNT = n(),
             SEQUENCE_SUM = sum(AVG_SEQ)) %>% 
   ggplot(aes(y = location_name, x = SEQUENCE_SUM)) +
   geom_bar(stat = "identity", position = "fill", color = "black", aes(fill = SUPERGROUP_PHYLUM)) +
   scale_fill_manual(values = c("#1abc9c", "#34495e","#125223", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#eb7e17","#f5bfb0", "#de6600", "#007a7a", "#93c47d","#230b36","#a1eb17","#666330","#ee429b", "#d7b6d7", "#e71414", "#ffe8a4", "#eb655b","#2986cc", "#bcbcbc","#c5cc49","#1b1c1b", "#444444", "#f0f5f1")) +
   theme_classic() +
-  facet_grid(rows = vars(depth_category)) +
+  facet_grid(rows = vars(depth_category, filter)) +
   theme(axis.text.x = element_text(color = "black", size = 12),
         axis.text.y = element_text(color = "black", size = 12),
         strip.background = element_blank(),
-        strip.text = element_blank(),
+        # strip.text = element_blank(),
         legend.position = "bottom",
         legend.title = element_blank()) +
   labs(y = "Diffuse vent sites", x = "Relative Sequence Abundance")
@@ -263,7 +263,77 @@ axial_df_tax %>%
 
 ```
 
-#### Repeat with filters
+# QC individual samples for metaT
+```{r}
+head(asv_long_tax)
+```
+
+```{r}
+axial_df_qc_reps <- asv_long_tax %>%
+  group_by(Feature.ID, lab_num, dive_ctd, sample_name, collection_method, sample_type, filter, primer, location_name, depth_category) %>% 
+    summarise(AVG_SEQ = mean(SEQUENCE_COUNT)) %>% 
+  ungroup() %>% 
+  left_join(tax) %>% 
+  left_join(tax_refine) %>% 
+  filter(Taxon != "Unassigned")
+head(axial_df_qc_reps)
+# table(axial_df_qc_reps$depth_category)
+# filter(depth_category == "diffuse")
+```
+
+```{r, fig.height=20, fig.width=8}
+axial_df_qc_reps %>% 
+  # filter(filter == "PES02" | filter == "sterivex") %>%
+  filter(depth_category == "diffuse") %>% 
+  filter(Supergroup != "Opisthokonta") %>% 
+  filter(sample_type != "control") %>% 
+  filter(!is.na(Supergroup)) %>% 
+  # filter(depth_category != "above vent") %>% 
+  group_by(sample_type, location_name, depth_category, SUPERGROUP_PHYLUM, lab_num, filter) %>% 
+  summarize(ASV_COUNT = n(),
+            SEQUENCE_SUM = sum(AVG_SEQ)) %>% 
+  ggplot(aes(y = lab_num, x = SEQUENCE_SUM)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", aes(fill = SUPERGROUP_PHYLUM)) +
+  scale_fill_manual(values = c("#1abc9c", "#34495e","#125223", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#eb7e17","#f5bfb0", "#de6600", "#007a7a", "#93c47d","#230b36","#a1eb17","#666330","#ee429b", "#d7b6d7", "#e71414", "#ffe8a4", "#eb655b","#2986cc", "#bcbcbc","#c5cc49","#1b1c1b", "#444444", "#f0f5f1")) +
+  theme_classic() +
+  facet_grid(rows = vars(location_name, filter, depth_category), space = "free", scales = "free") +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        # strip.text = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(y = "", x = "Relative Sequence Abundance")
+
+```
+
+
+```{r, fig.height=20, fig.width=8}
+axial_df_qc_reps %>% 
+  # filter(filter == "PES02" | filter == "sterivex") %>%
+  filter(depth_category == "diffuse") %>% 
+  filter(Supergroup != "Opisthokonta") %>% 
+  filter(sample_type != "control") %>% 
+  filter(!is.na(Supergroup)) %>% 
+  # filter(depth_category != "above vent") %>% 
+  group_by(sample_type, location_name, depth_category, SUPERGROUP_PHYLUM, lab_num, filter) %>% 
+  summarize(ASV_COUNT = n(),
+            SEQUENCE_SUM = sum(AVG_SEQ)) %>% 
+  ggplot(aes(y = lab_num, x = SEQUENCE_SUM)) +
+  geom_bar(stat = "identity", position = "stack", color = "black", aes(fill = SUPERGROUP_PHYLUM)) +
+  scale_fill_manual(values = c("#1abc9c", "#34495e","#125223", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#eb7e17","#f5bfb0", "#de6600", "#007a7a", "#93c47d","#230b36","#a1eb17","#666330","#ee429b", "#d7b6d7", "#e71414", "#ffe8a4", "#eb655b","#2986cc", "#bcbcbc","#c5cc49","#1b1c1b", "#444444", "#f0f5f1")) +
+  theme_classic() +
+  facet_grid(rows = vars(location_name, filter, depth_category), space = "free", scales = "free") +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        # strip.text = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(y = "", x = "Relative Sequence Abundance")
+
+```
+
 
 ```{r}
 unique(axial_df_tax$depth_category)
