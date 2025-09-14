@@ -1,0 +1,410 @@
+---
+title: "Deep-sea amplicons"
+editor: visual
+---
+
+# Set up
+
+```{r}
+# | warning: false
+library(tidyverse); library(readxl)
+library(compositions); library(vegan)
+```
+
+# Import tsv files from QIIME2
+
+ASV count table.
+```{r}
+asv <- read.delim(file = "input-data/deepsea-18s-merged-asv-table-05022025.tsv", sep = "\t", skip = 1)
+# head(asv)
+colnames(asv)
+```
+
+Taxonomy assignment for ASVs.
+```{r}
+tax <- read.delim(file = "input-data/taxonomy.tsv", sep = "\t")
+# head(tax)
+```
+
+## Import metadata
+
+Axial Seamount metadata.
+```{r}
+# Import biotic data
+# axial_biotic <- read_excel("metadata-axial-2023.xlsx", sheet = "biotic")
+# 
+# axial_metadata_samples <- read_excel("metadata-axial-2023.xlsx", sheet = "metadata") %>% 
+#   select(-NUM, -OLD_NAME_ARCHIVE) %>% 
+#   left_join(axial_biotic) %>% 
+#   select(-starts_with("lat_long"), -description_1, -Description_2, -DATE,
+#        -primer, -target_population, -lab_num) %>% 
+#   add_column(site = "Axial") %>% 
+#   mutate(year = case_when(`AXIAL YEAR` == "AXIAL_22" ~ 2022,
+#                           `AXIAL YEAR` == "AXIAL_23" ~ 2023),
+#          lat = as.numeric(lat),
+#          long = as.numeric(long)) %>% 
+#   # separate(COORDINATES_mod, c("lat", "long"), sep = ".N.") %>% 
+#   select(-`AXIAL YEAR`)
+
+# glimpse(axial_metadata_samples)
+# unique(axial_metadata_samples$`AXIAL YEAR`)
+```
+
+
+Mid-Cayman Rise, Gorda Ridge, and other archived samples.
+
+```{r}
+# survey_2024 <- read.delim("../microeuks_deepbiosphere_datamine/microeuk-amplicon-survey/data-input/samplelist-metadata.txt", na.strings = "")
+# head(survey_2024)
+# unique(survey_2024$SAMPLE)
+```
+
+```{r}
+# head(survey_2024)
+# all_metadata <- survey_2024 %>%
+#   mutate(COORDINATES_mod = str_replace_all(COORDINATES, " N", ", "),
+#          COORDINATES_mod = str_replace_all(COORDINATES_mod, " W", "")) %>%
+#   separate(COORDINATES_mod, c("lat", "long"), sep = ", ") %>%
+#   mutate(sample_type = case_when(
+#            SAMPLETYPE == "Plume" ~ "plume",
+#            SAMPLETYPE == "Background" ~ "background",
+#            SAMPLETYPE == "Vent" ~ "vent",
+#            Sample_or_Control == "Control" ~ "control",
+#            SAMPLETYPE == "Microcolonizer" ~ "microcolonizer",
+#            SAMPLETYPE == "Incubation" ~ "incubation"),
+#          processing = case_when(
+#            grepl("Axial_", SAMPLE) ~ "HOG",
+#            grepl("GordaRidge", SAMPLE) ~ "SUPR",
+#            grepl("_GR_", SAMPLE) ~ "Microcolonizer",
+#            grepl("_MCR_", SAMPLE) ~ "HOG"),
+#          long = case_when(
+#            (SITE == "Axial" | SITE == "GordaRidge") ~ (as.numeric(long) * (-1)),
+#            TRUE ~ as.numeric(long)),
+#          depth = as.numeric(DEPTH),
+#          prok = as.numeric(ProkConc),
+#          lat = as.numeric(lat)) %>%
+#   add_column(filter = "PES02_sterivex") %>%
+#   select(SAMPLE_NAME = SAMPLE, dive_ctd = SAMPLEID,
+#          sample_name = VENT, collection_method = Type, sample_type,
+#          sample_identifier = Type, filter, processing,
+#          location_name = VENT, depth_category = SAMPLETYPE,
+#          depth, fluid_origin = Type, lat, long,
+#          pH, temp, prok, site = SITE, year = YEAR) %>%
+#   add_row(axial_metadata_samples)
+# colnames(all_metadata)
+```
+
+```{r}
+# write.csv(all_metadata, file = "input-data/all_metadata_sep2025.csv", row.names = FALSE)
+```
+
+
+Import and compile all metadata.
+Commented out code above is how data was originally combined.
+
+```{r}
+all_metadata <- read.csv("input-data/all_metadata_sep2025.csv")
+```
+
+```{r}
+# colnames(asv)
+# colnames(all_metadata)
+asv_long_all <- asv %>% 
+  pivot_longer(cols = -c("X.OTU.ID"), names_to = "SAMPLE_NAME", values_to = "SEQUENCE_COUNT") %>% 
+  select(Feature.ID = "X.OTU.ID", SAMPLE_NAME, SEQUENCE_COUNT) %>% 
+  mutate(SAMPLE_NAME = str_replace_all(SAMPLE_NAME, "^X", "")) %>%
+  filter(SEQUENCE_COUNT > 0) %>% 
+  left_join(all_metadata) #Should join by "SAMPLE_NAME" only.
+```
+
+## Curate taxonomy
+
+```{r}
+head(tax)
+```
+
+Curate taxonomy using the original tax tsv file. 
+
+```{r}
+myzo_18s <- c("Perkinsea", "Chrompodellids", "Apicomplexa")
+supergroup_list <- c("Stramenopiles", "Rhizaria", "Alveolata", "Opisthokonta", "Ancyromonadida")
+supergroup0_list <- c("Archaeplastida", "CRuMs", "Provora", "Cryptista")
+##
+tax_refine <- tax %>% 
+  # select(Taxon) %>% distinct() %>%
+  separate(Taxon, into = c("Domain", "Supergroup_0","Supergroup", "Phylum", "Class", "Order" ,"Family", "Genus_spp"), remove = FALSE, sep = ";") %>% 
+  filter(Domain == "Eukaryota") %>% 
+  mutate(SUPERGROUP_PHYLUM = case_when(
+    ## NAs!
+    (is.na(Supergroup) & is.na(Supergroup_0)) ~ "Eukaryote-Unannotated",
+    (is.na(Supergroup) & !(is.na(Supergroup_0))) ~ paste(Supergroup_0, "Unannotated", sep = "-"),
+    (!(is.na(Supergroup)) & is.na(Supergroup_0)) ~ paste(Supergroup, "Unannotated", sep = "-"),
+    (is.na(Phylum) & is.na(Supergroup)) ~ paste(Supergroup_0, "Unannotated", sep = "-"),
+    Supergroup_0 == "Eukaryota_X" ~ "Eukaryote-Unannotated",
+    # Alveolata
+    Class == "Syndiniales" ~ paste(Supergroup, Class, sep = "-"),
+    Phylum %in% myzo_18s ~ "Alveolata-Myzozoa",
+    Phylum == "Dinoflagellata" ~ "Alveolata-Dinophyta",
+    (Supergroup == "Alveolata" & grepl("_X", Phylum)) ~ "Alveolata-Unannotated",
+    (Supergroup == "Alveolata" & is.na(Phylum)) ~ "Alveolata-Unannotated",
+    # Stramenopiles
+    (Supergroup == "Stramenopiles" & grepl("_X", Phylum)) ~ "Stramenopiles-Unannotated",
+    (Supergroup == "Stramenopiles" & is.na(Phylum)) ~ "Stramenopiles-Unannotated",
+    # Rhizaria
+    (Supergroup == "Rhizaria" & grepl("_X", Phylum)) ~ "Rhizaria-Unannotated",
+    (Supergroup == "Rhizaria" & is.na(Phylum)) ~ "Rhizaria-Unannotated",
+    # Amoebozoa
+    Supergroup_0 == "Amoebozoa" & is.na(Supergroup) ~ "Amoebozoa-Unannotated",
+    Supergroup_0 == "Amoebozoa" ~ paste(Supergroup_0, Supergroup, sep = "-"),
+    Supergroup == "Discosea" ~ "Amoebozoa-Lobosa",
+    # 
+    Supergroup == "Apusomonada" ~ "Apusozoa-Apusomonadida",
+    Supergroup == "Breviatea" ~ "Breviatea-Unannotated",
+    Supergroup == "Picozoa" ~ "Picozoa",
+    Supergroup == "Ancyromonadida" ~ "Ancyromonadida",
+    Supergroup_0 == "Excavata" ~ paste("Excavata", Supergroup, sep = "-"),
+    Supergroup_0 == "Hacrobia" ~ paste("Hacrobia", Supergroup, sep = "-"),
+    #
+    Supergroup %in% supergroup_list ~ paste(Supergroup, Phylum, sep = "-"), 
+    Supergroup_0 %in% supergroup0_list ~ paste(Supergroup_0, Supergroup, sep = "-"), 
+    Supergroup == "Telonemia" ~ "Telonemia"
+    ))
+  # select(-Genus_spp) %>% distinct()
+# unique(tax_refine$SUPERGROUP_PHYLUM)
+```
+## Create core dfs
+```{r}
+colnames(asv_long_all)
+
+# All taxa and data
+asv_long_tax_all <- asv_long_all %>% 
+  left_join(tax) %>% 
+  left_join(tax_refine)
+
+colnames(asv_long_tax_all)
+```
+
+```{r}
+# Taxa, avg across reps, remove NA
+asv_long_tax_avg <- asv_long_tax_all %>% 
+  group_by(Feature.ID, dive_ctd, sample_name, collection_method, sample_type, sample_identifier, filter, processing, location_name, depth_category, depth, fluid_origin, site, year, lat, long, pH, temp, prok, Taxon, Domain, Supergroup_0, Supergroup, Phylum, Class, Order, Family, Genus_spp, SUPERGROUP_PHYLUM) %>% 
+  summarise(MEAN_SEQ = mean(SEQUENCE_COUNT))
+
+unique(asv_long_tax_avg$location_name)
+```
+
+# Plot taxonomy
+
+```{r}
+unique(asv_long_tax_avg$SUPERGROUP_PHYLUM)
+
+tax_all <- c("#d7b6d7", "#1abc9c", "#34495e", "#a8736f","#125223", "#9b59b6", "#fea02f", "#ff6f61", "#189ab4", "#eb7e17","#f5bfb0", "#de6600", "#007a7a", "#93c47d","#230b36","#c4c168","#a1eb17","#666330","#ee429b",  "#e71414", "#ffe8a4", "#eb655b","#2986cc", "#bcbcbc","#c5cc49","#1b1c1b", "#444444", "#f0f5f1")
+```
+
+
+### Bar plot
+
+```{r, fig.height=13, fig.width=13}
+vent_habitat <- c("background", "plume", "vent")
+depth_cat <- c("diffuse", "Vent", "peak plume", "Plume", "background", "Background")
+
+df_tax_plotinput <- asv_long_tax_avg %>% 
+  #Average across filter types
+  group_by(Feature.ID, dive_ctd, sample_name, collection_method, sample_type, location_name, depth_category, depth, site, year, lat, long, pH, temp, prok, SUPERGROUP_PHYLUM) %>% 
+  summarise(mean_seq_reps = mean(MEAN_SEQ)) %>% 
+  ungroup() %>% 
+  filter(sample_type %in% vent_habitat ) %>%
+  filter(depth_category %in% depth_cat) %>% 
+  filter(location_name != "Soupy background") %>% 
+  filter(location_name != "Near vent BW") %>% 
+  filter(location_name != "Shallow seawater") %>% 
+  filter(!(grepl("Opisthokonta", SUPERGROUP_PHYLUM))) %>%
+  filter(!is.na(SUPERGROUP_PHYLUM)) %>%
+  group_by(location_name, sample_type, site, year, SUPERGROUP_PHYLUM) %>% 
+  summarize(ASV_COUNT = n(),
+            SEQUENCE_SUM = sum(mean_seq_reps))
+
+
+# Plot
+df_tax_plotinput %>%
+  ggplot(aes(y = location_name, x = SEQUENCE_SUM)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", aes(fill = SUPERGROUP_PHYLUM)) +
+  scale_fill_manual(values = tax_all) +
+  scale_x_continuous(expand = c(0,0)) +
+  theme_classic() +
+  facet_grid(rows = vars(sample_type, year, site), space = "free", scale = "free") +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        strip.text.y = element_text(color = "black", size = 9, angle = 0, hjust = 0, vjust = 0),
+        legend.position = "right",
+        legend.title = element_blank()) +
+  labs(y = "Diffuse vent sites", x = "Relative Sequence Abundance")
+# ggsave("figures/vent-nsf-report.svg", width = 9, height = 7, device = "svg", limitsize = FALSE)
+```
+
+### ASV distribution
+
+```{r, fig.height=13, fig.width=13}
+head(df_tax_plotinput)
+df_tax_plotinput %>% 
+  ggplot(aes(y = location_name, x = SUPERGROUP_PHYLUM, size = ASV_COUNT, fill = SUPERGROUP_PHYLUM)) +
+    # geom_tile(stat = "identity", color = "black") +
+  geom_point(shape = 21, color = "black") +
+  scale_fill_manual(values = tax_all) +
+  # scale_size_manual(values = c(1,8)) +
+  scale_x_discrete(position = "top") +
+  theme_classic() +
+  facet_grid(rows = vars(sample_type, year, site), space = "free", scale = "free") +
+  theme(axis.text.x = element_text(color = "black", size = 12, angle =90, hjust = 0, vjust = 0),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        strip.text.y = element_text(color = "black", size = 9, angle = 0, hjust = 0, vjust = 0),
+        legend.position = "none",
+        legend.title = element_blank()) +
+  labs(y = "Diffuse vent sites", x = "Relative Sequence Abundance")
+# ggsave("figures/vent-nsf-report.svg", width = 9, height = 7, device = "svg", limitsize = FALSE)
+```
+
+
+## Heatmap
+
+```{r}
+unique(asv_long_tax_avg$year)
+yrs <- c(2019, 2020, 2023)
+
+df_tax_matrix <- asv_long_tax_avg %>% 
+  #Average across filter types
+  group_by(Feature.ID, dive_ctd, sample_name, collection_method, sample_type, location_name, depth_category, depth, site, year, lat, long, pH, temp, prok, SUPERGROUP_PHYLUM) %>% 
+  summarise(mean_seq_reps = mean(MEAN_SEQ)) %>% 
+  ungroup() %>% 
+  filter(sample_type %in% vent_habitat ) %>%
+  filter(depth_category %in% depth_cat) %>% 
+  filter(location_name != "Soupy background") %>% 
+  filter(location_name != "Near vent BW") %>% 
+  filter(location_name != "Shallow seawater") %>% 
+  filter(!(grepl("Opisthokonta", SUPERGROUP_PHYLUM))) %>%
+  filter(!is.na(SUPERGROUP_PHYLUM)) %>%
+  filter(year %in% yrs) %>% 
+  unite(SAMPLE_INFO, location_name, sample_type, site, sep = "_") %>% 
+  group_by(SAMPLE_INFO, SUPERGROUP_PHYLUM) %>% 
+  summarize(SEQUENCE_SUM = sum(mean_seq_reps)) %>% 
+  pivot_wider(names_from = SUPERGROUP_PHYLUM, values_from = SEQUENCE_SUM, values_fill = 0) %>% 
+  column_to_rownames(var = "SAMPLE_INFO")
+```
+Data transformation.
+```{r}
+# ?decostand
+df_tax_norm <- vegan::decostand(df_tax_matrix, method = "standardize", MARGIN = 1)
+# head(df_tax_norm)
+```
+
+
+```{r, fig.height=13, fig.width=13}
+df_tax_norm %>% 
+  rownames_to_column(var = "SAMPLE_NAME") %>% 
+  pivot_longer(cols = -c(SAMPLE_NAME), names_to = "SUPERGROUP_PHYLUM", values_to = "norm_seq") %>% 
+  separate(SAMPLE_NAME, into = c("location_name", "sample_type", "site"), sep = "_", remove = FALSE) %>% 
+  ggplot(aes(y = location_name, x = SUPERGROUP_PHYLUM, fill = norm_seq)) +
+    geom_tile(stat = "identity", color = "black") +
+  scale_fill_fermenter(type = "seq", palette = "Reds", direction = 1) +
+  scale_x_discrete(position = "top") +
+  theme_classic() +
+  facet_grid(rows = vars(sample_type, site), space = "free", scale = "free") +
+  theme(axis.text.x = element_text(color = "black", size = 12, angle =90, hjust = 0, vjust = 0),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        strip.text.y = element_text(color = "black", size = 9, angle = 0, hjust = 0, vjust = 0),
+        legend.position = "right",
+        legend.title = element_blank()) +
+  labs(y = "Diffuse vent sites", x = "Relative Sequence Abundance")
+# ggsave("figures/vent-nsf-report.svg", width = 9, height = 7, device = "svg", limitsize = FALSE)
+```
+
+
+# Diversity
+
+```{r}
+yrs <- c(2019, 2020, 2023)
+
+df_all_data_matrix <- asv_long_tax_avg %>% 
+  #Average across filter types
+  group_by(Feature.ID, dive_ctd, sample_name, collection_method, sample_type, location_name, depth_category, depth, site, year, lat, long, pH, temp, prok, SUPERGROUP_PHYLUM) %>% 
+  summarise(mean_seq_reps = mean(MEAN_SEQ)) %>% 
+  ungroup() %>% 
+  filter(sample_type %in% vent_habitat ) %>%
+  filter(depth_category %in% depth_cat) %>% 
+  filter(location_name != "Soupy background") %>% 
+  filter(location_name != "Near vent BW") %>% 
+  filter(location_name != "Shallow seawater") %>% 
+  filter(!(grepl("Opisthokonta", SUPERGROUP_PHYLUM))) %>%
+  filter(!is.na(SUPERGROUP_PHYLUM)) %>%
+  filter(year %in% yrs) %>% 
+  unite(SAMPLE_INFO, location_name, sample_type, site, sep = "_") %>% 
+  group_by(SAMPLE_INFO, Feature.ID) %>% 
+  summarize(SEQUENCE_SUM = sum(mean_seq_reps)) %>% 
+  pivot_wider(names_from = SAMPLE_INFO, values_from = SEQUENCE_SUM, values_fill = 0) %>% 
+  column_to_rownames(var = "Feature.ID")
+```
+
+```{r}
+shannon <- vegan::diversity(df_all_data_matrix, index = "shannon", MARGIN = 2)
+# head(shannon)
+```
+```{r}
+as.data.frame(shannon) %>% 
+  rownames_to_column(var = "SAMPLE_NAME") %>% 
+  separate(SAMPLE_NAME, into = c("location_name", "sample_type", "site"), sep = "_", remove = FALSE) %>% 
+  mutate(SAMPLE_TYPE = case_when(
+    sample_type == "vent" ~ "Vent",
+    sample_type == "plume" ~ "Plume",
+    sample_type == "background" ~ "Background"
+  )) %>% 
+  ggplot(aes(y = SAMPLE_TYPE, x = shannon)) +
+  geom_boxplot(color = "black", width = 0.3) +
+    geom_jitter(stat = "identity", color = "black", width = 0.1, size = 3,
+                aes(fill = site, shape = site)) +
+  scale_shape_manual(values = c(21, 22, 23, 24)) +
+  scale_fill_manual(values = c("#28a87e", "#111f61", "#bf2c7d", "#d6be47")) +
+  theme_classic() +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        strip.text.y = element_text(color = "black", size = 9, angle = 0, hjust = 0, vjust = 0),
+        legend.position = "right",
+        legend.title = element_blank(),
+        panel.grid.major = element_line()) +
+  labs(y = "", x = "Shannon Diversity")
+```
+
+```{r}
+# ?diversity
+invsimp <- vegan::diversity(df_all_data_matrix, index = "invsimpson", MARGIN = 2)
+# head(invsimp)
+```
+
+```{r}
+as.data.frame(invsimp) %>% 
+  rownames_to_column(var = "SAMPLE_NAME") %>% 
+  separate(SAMPLE_NAME, into = c("location_name", "sample_type", "site"), sep = "_", remove = FALSE) %>% 
+  mutate(SAMPLE_TYPE = case_when(
+    sample_type == "vent" ~ "Vent",
+    sample_type == "plume" ~ "Plume",
+    sample_type == "background" ~ "Background"
+  )) %>% 
+  ggplot(aes(y = SAMPLE_TYPE, x = shannon)) +
+  geom_boxplot(color = "black", width = 0.3) +
+    geom_jitter(stat = "identity", color = "black", width = 0.1, size = 3,
+                aes(fill = site, shape = site)) +
+  scale_shape_manual(values = c(21, 22, 23, 24)) +
+  scale_fill_manual(values = c("#28a87e", "#111f61", "#bf2c7d", "#d6be47")) +
+  theme_classic() +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        axis.text.y = element_text(color = "black", size = 12),
+        strip.background = element_blank(),
+        strip.text.y = element_text(color = "black", size = 9, angle = 0, hjust = 0, vjust = 0),
+        legend.position = "right",
+        legend.title = element_blank(),
+        panel.grid.major = element_line()) +
+  labs(y = "", x = "Inverse Simpson")
+```
