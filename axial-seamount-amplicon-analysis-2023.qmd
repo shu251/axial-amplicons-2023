@@ -264,6 +264,7 @@ axial_df_tax %>%
 ```
 
 # QC individual samples for metaT
+
 ```{r}
 head(asv_long_tax)
 ```
@@ -306,10 +307,10 @@ axial_df_qc_reps %>%
   labs(y = "", x = "Relative Sequence Abundance")
 
 ```
+
 ```{r}
 unique(axial_df_qc_reps$sample_type)
 ```
-
 
 ```{r, fig.height=13, fig.width=18}
 axial_df_qc_reps %>% 
@@ -339,11 +340,9 @@ axial_df_qc_reps %>%
 
 ```
 
-
 ```{r}
 unique(axial_df_tax$depth_category)
 ```
-
 
 ```{r, fig.height=12, fig.width=12}
 axial_df_tax %>% 
@@ -404,12 +403,12 @@ axial_df_tax %>%
   labs(y = "", x = "Relative Sequence Abundance")
 
 ```
+
 # Compare filter types at species level
 
 ```{r}
 head(axial_df_tax)
 ```
-
 
 ```{r, fig.height=32, fig.width=6}
 axial_df_tax %>% 
@@ -439,8 +438,6 @@ axial_df_tax %>%
         legend.title = element_blank()) +
   labs(y = "Diffuse vent sites", x = "Relative Sequence Abundance")
 ```
-
-
 
 # Plot metadata
 
@@ -481,6 +478,7 @@ unique(axial_df_tax$depth_category)
 ```
 
 Create matrix
+
 ```{r}
 axial_matrix <- axial_df_tax %>% 
   filter(sample_type != "control") %>% 
@@ -501,6 +499,7 @@ axial_matrix <- axial_df_tax %>%
 shannon <- vegan::diversity(axial_matrix, index = "shannon", MARGIN = 2)
 # head(shannon)
 ```
+
 ```{r}
 # Convert from shannon output
 as.data.frame(shannon) %>% 
@@ -536,6 +535,7 @@ as.data.frame(shannon) %>%
 invsimp_axial <- vegan::diversity(axial_matrix, index = "invsimpson", MARGIN = 2)
 
 ```
+
 ```{r}
 # Convert from shannon output
 as.data.frame(invsimp_axial) %>% 
@@ -566,7 +566,6 @@ as.data.frame(invsimp_axial) %>%
         panel.grid.major = element_line()) +
   labs(y = "", x = "Inverse Simpson")
 ```
-
 
 # Session Info
 
